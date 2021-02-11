@@ -1,0 +1,207 @@
+// PIC16F1516 Configuration Bit Settings
+
+// 'C' source line config statements
+
+// CONFIG1
+#pragma config FOSC = INTOSC    // Oscillator Selection (INTOSC oscillator: I/O function on CLKIN pin)
+#pragma config WDTE = OFF       // Watchdog Timer Enable (WDT disabled)
+#pragma config PWRTE = OFF      // Power-up Timer Enable (PWRT disabled)
+#pragma config MCLRE = ON       // MCLR Pin Function Select (MCLR/VPP pin function is MCLR)
+#pragma config CP = OFF         // Flash Program Memory Code Protection (Program memory code protection is disabled)
+#pragma config BOREN = ON       // Brown-out Reset Enable (Brown-out Reset enabled)
+#pragma config CLKOUTEN = OFF   // Clock Out Enable (CLKOUT function is disabled. I/O or oscillator function on the CLKOUT pin)
+#pragma config IESO = ON        // Internal/External Switchover (Internal/External Switchover mode is enabled)
+#pragma config FCMEN = ON       // Fail-Safe Clock Monitor Enable (Fail-Safe Clock Monitor is enabled)
+
+// CONFIG2
+#pragma config WRT = OFF        // Flash Memory Self-Write Protection (Write protection off)
+#pragma config VCAPEN = OFF     // Voltage Regulator Capacitor Enable bit (VCAP pin function disabled)
+#pragma config STVREN = ON      // Stack Overflow/Underflow Reset Enable (Stack Overflow or Underflow will cause a Reset)
+#pragma config BORV = LO        // Brown-out Reset Voltage Selection (Brown-out Reset Voltage (Vbor), low trip point selected.)
+#pragma config LPBOR = OFF      // Low-Power Brown Out Reset (Low-Power BOR is disabled)
+#pragma config LVP = ON         // Low-Voltage Programming Enable (Low-voltage programming enabled)
+
+// #pragma config statements should precede project file includes.
+// Use project enums instead of #define for ON and OFF.
+
+#include <xc.h>
+#include<pic16f1516.h>
+#include<stdint.h>
+#include<stdio.h>
+#define _XTAL_FREQ 500000
+
+void init();
+void interruptinit();
+void tmr1init();
+void tmr2init();
+void capturemodeinit();
+void display_number(uint8_t value,uint8_t size);
+void display(char a,char b);                  //command or data mode   
+void display_str(char A[]) ;                  //display string
+uint8_t lcdflag=0;                            //lcdflag
+uint16_t ccpr1_save=0;                        //global variable for capture mode
+uint16_t ton=0,toff=0;                       //ton,toff variables
+uint8_t A[]="Ton=  ";                        //string A
+uint8_t B[]="Toff=  ";                       //string B
+uint8_t C[]="Ttot=  ";                       //string C
+uint8_t D[]="Dty=  ";                        //string D
+void main()
+{
+     uint16_t m=0,w=0,p=0;                     //ton,toff,Ttotal variables
+     uint16_t k=0,l=0,n=0;                     //local variables
+     init();                                  //initialize I/O ports & LCD ports
+     interruptinit();                         //enable interrupts for subroutine
+     tmr1init();                              //tmr1 for capture mode
+     tmr2init();                              //tmr2 for displaying every 1 second in LCD
+     capturemodeinit();                       //capture mode on rising edge initially
+    while(1)
+    {
+        if(lcdflag==1)                       //wait for lcdflag==1(to display values in LCD for every 1second)
+        {   
+            lcdflag=0;                        //lcdflag is made 0 again
+            k=ton;                            //loading the ton value in 'k'.
+            l=toff;                           //loading the toff value in 'l'.
+            n=k+l;                            //loading the ton+toff value in 'n'.
+            display(0x84,0);                  //setting cursor at 0X84 & displaying ton period(ms) in LCD
+            m=(k*8)/1000;                     //m=(500*8)/1000,so m=4ms(ton time)
+            display_number(m,2);              //display 4ms(size is 2)
+            display(0x8C,0);                  //setting cursor at 0X8C & displaying toff period(ms) in LCD
+            w=(l*8)/1000;                     //w=(2000*8)/1000,so w=16ms(toff time)
+            display_number(w,2);              //display 16ms(size is 2)
+            display(0xC5,0);                  //setting cursor at 0XC5 & displaying Ttotal period(ms) in LCD
+            p=(n*8)/1000;                     //p=(2500*8)/1000,so p=20ms(Ttotal time)
+            display_number(p,2);              //display 20ms(size is 2)
+            display(0xCC,0);                  //setting cursor at 0XCC & displaying duty cycle(%) in LCD
+            w=(m*100)/p;                      //w=(4ms/20ms)*100,so 'w' is 20% duty cycle.
+            display_number(w,2);              //display 20(size is 2)
+            display(0xCE,0);                  //setting cursor at 0XCE & displaying (%) in LCD
+            display(37,1);                    //ASCII value for (%) is 37.
+            display(0x80,0);                  //again starts from the beginning.
+        }
+    }
+}
+void init()
+{
+    TRISB=TRISC=0;                     //LCD output ports
+    LATB=LATC=0;    
+    TRISC2=1;                          //CCP1 pin as capture input,we can also use CCP2 pin
+    ANSC2 =0;                          //input as digital input(0 or 1)
+    display(0x0E,0);                   //display ON ,cursor ON
+    display(0x3C,0);                   //ACTIVATING second row of LCD display.
+    display(0x80,0);                   //setting cursor on 0x80 
+    display_str(A);                    //display string A
+    display(0x87,0);                   //setting cursor on 0x87
+    display_str(B);                    //display string B
+    display(0xC0,0);                   //setting cursor on 0xC0
+    display_str(C);                    //display string C
+    display(0xC8,0);                   //setting cursor on 0xC8
+    display_str(D);                    //display string D
+}
+void interruptinit()
+{
+    ei();                                 //global interrupt enable
+    INTCONbits.PEIE=1;                    //to enable TMR2IE & CCP1IE, we should enable  PEIE
+    PIE1bits.TMR2IE=1;                    //TMR2 Interrupt enable for every 1second 
+}
+void tmr1init()                           //tmr1 is used for capturing the counts(ticks) for capture mode.
+{
+    T1CONbits.TMR1CS =0b00;             //TMR1 clock source
+    T1CONbits.T1CKPS =0b00;             //prescalar OFF.
+    T1CONbits.TMR1ON =1;               //TMR1 is made ON(TMR1 should be manually ON & OFF) ,no need to use TMR1IE 
+}
+void tmr2init()
+{
+    T2CONbits.T2CKPS=0b11;          //prescalar is 1:64(8us*64 = 512us)so every 512us 1 tick occurs.(FOSC/4).F=500KHZ
+    T2CONbits.T2OUTPS=0b1001;       //postscalar is 1:10(512us*10 = 5120us)so every 5120us TMR2 interrupt occurs
+    PR2=194;                        //for 1 second(1000000us/5120us =195.3),so (0 to 194)194 ticks required in PR2.
+                                    //(1000000us/(8us*64prescalar*10postscalar))gives 195.3,roundoff value is 195(0 to 194) ticks.
+    
+    PIR1bits.TMR2IF=0;                   //TMR2 interrupt flag is made 0 initially.
+    T2CONbits.TMR2ON=1;                  //TMR2 is made ON manually whereas  in TMR0  it is automatically switched ON. 
+}
+void capturemodeinit()                   //we use CCP1 pin as capture,so(CCP1M,CCPR1,CCP1IE,CCP1IF) are used,if we use CCP2 pin 
+                                         //(CCP2M,CCPR2,CCP2IE,CCP2IF) are used.
+{
+  CCP1CONbits.CCP1M=0b0101;             //capture mode on every rising edge initially
+  PIE1bits.CCP1IE=1;                    //when rising edge detected subroutine is called so CCP1IE is enabled
+  PIR1bits.CCP1IF=0;                    //for indication of flag status we use CCP1IF 
+}
+void display_number(uint8_t value,uint8_t size)        //getting value to be displayed in LCD & number size.
+{
+    uint8_t s=0,t=0,u=0,v=0;
+    if(size==4)
+    {
+    s=value%10;
+    t=(value/10)%10;
+    u=(value/100)%10;
+    v=value/1000;
+    display(48+v,1);
+    display(48+u,1);
+    display(48+t,1);
+    display(48+s,1);
+    }
+    else if(size==3)
+    {
+    s=value%10; 
+    t=(value/10)%10;
+    u=value/100;
+    display(48+u,1);
+    display(48+t,1);
+    display(48+s,1);  
+    }
+    else if(size==2)
+    {
+    s=value%10; 
+    t=(value/10);
+    display(48+t,1);
+    display(48+s,1);  
+    } 
+}
+void display(char a,char b)                //getting DATA in 'a' & MODE in 'b'.        
+{
+    LATC0=b;                               //command mode(RS->O COMMAND MODE ,RS->1 DATA MODE )
+    LATB=a;                                //data is loaded.
+    LATC1=1;                               //enable
+    __delay_us(20);
+    LATC1=0;                               //disable
+    __delay_us(20);   
+}
+ void display_str(char A[])                  //getting the array and declared in char datatype.
+{
+    for(uint8_t i=0 ; A[i]!= '\0'; i++)      //initialize 'i' and  check A[i] != null.
+     {
+       display(A[i],1);                      //function passing the data and mode.
+       __delay_ms(50);                       //delay between each character.
+     }
+}
+void __interrupt() ISR(void)                 
+{
+    static uint8_t ccpflag=0;               //ccpflag to change rising and falling edge each time.
+    if(PIR1bits.TMR2IF)                     // if TMR2 overflows (PR2==194) for every 1second
+    {
+     PIR1bits.TMR2IF=0;                     //made TMR2IF '0' again 
+     lcdflag=1;                             //set lcdflag =1 for every 1second and lcdflag is cleared in while loop
+    } 
+    if(PIR1bits.CCP1IF)                     //if rising edge is detected initially CCP1IF will set
+    {
+      PIR1bits.CCP1IF=0;                     //made flag 0 again                   
+        if(ccpflag == 0)                       //if ccpflag=0(already in rising edge)
+        {
+            ccpflag=1;                      //made ccpflag as 1
+            toff=CCPR1-ccpr1_save;          //toff value
+            ccpr1_save = CCPR1;             //loading the CCPR1 value to ccpr1_save variable
+            CCP1CON=0;                      //made the CCP1CON register 0,refer class notes.
+            CCP1CONbits.CCP1M = 0b0100;     //change it to detect falling edge
+        }
+        else                                //if ccpflag=1(already in falling edge)
+        {
+            ccpflag=0;                     //made ccpflag =0
+            ton=CCPR1-ccpr1_save;          //ton value 
+            ccpr1_save = CCPR1;            //loading the CCPR1 value to ccpr1_save variable
+            CCP1CON=0;                     //made the CCP1CON register 0,refer class notes
+            CCP1CONbits.CCP1M=0b0101;      //change it to detect rising edge again
+        }                                     
+    } 
+}
+     
+    

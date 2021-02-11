@@ -1,0 +1,59 @@
+// PIC16F1516 Configuration Bit Settings
+
+// 'C' source line config statements
+
+// CONFIG1
+#pragma config FOSC = INTOSC    // Oscillator Selection (INTOSC oscillator: I/O function on CLKIN pin)
+#pragma config WDTE = OFF       // Watchdog Timer Enable (WDT disabled)
+#pragma config PWRTE = OFF      // Power-up Timer Enable (PWRT disabled)
+#pragma config MCLRE = ON       // MCLR Pin Function Select (MCLR/VPP pin function is MCLR)
+#pragma config CP = OFF         // Flash Program Memory Code Protection (Program memory code protection is disabled)
+#pragma config BOREN = ON       // Brown-out Reset Enable (Brown-out Reset enabled)
+#pragma config CLKOUTEN = OFF   // Clock Out Enable (CLKOUT function is disabled. I/O or oscillator function on the CLKOUT pin)
+#pragma config IESO = ON        // Internal/External Switchover (Internal/External Switchover mode is enabled)
+#pragma config FCMEN = ON       // Fail-Safe Clock Monitor Enable (Fail-Safe Clock Monitor is enabled)
+
+// CONFIG2
+#pragma config WRT = OFF        // Flash Memory Self-Write Protection (Write protection off)
+#pragma config VCAPEN = OFF     // Voltage Regulator Capacitor Enable bit (VCAP pin function disabled)
+#pragma config STVREN = ON      // Stack Overflow/Underflow Reset Enable (Stack Overflow or Underflow will cause a Reset)
+#pragma config BORV = LO        // Brown-out Reset Voltage Selection (Brown-out Reset Voltage (Vbor), low trip point selected.)
+#pragma config LPBOR = OFF      // Low-Power Brown Out Reset (Low-Power BOR is disabled)
+#pragma config LVP = ON         // Low-Voltage Programming Enable (Low-voltage programming enabled)
+
+// #pragma config statements should precede project file includes.
+// Use project enums instead of #define for ON and OFF.
+
+#include <xc.h>
+#include<pic16f1516.h>
+#include<stdint.h>
+#define _XTAL_FREQ 500000                   //(FOSC/4).F=500KHZ
+void main()
+{
+    TRISC7= LATC7=0;                        //output pin
+                    
+    T2CONbits.T2CKPS=0b11;                 //prescalar is 1:64(8us*64 = 512us)so every 512us 1 tick occurs.
+    T2CONbits.T2OUTPS=0b1001;              //postscalar is 1:10(512us*10 = 5120us)so every 5120us TMR2 interrupt occurs
+    PR2=194;                               //for 1 second(1000000us/5120us =195.3),so (0 to 194)194 ticks required in PR2.
+                                           //(1000000us/(8us*64prescalar*10postscalar))gives 195.3,roundoff value is 195(0 to 194) ticks.
+    
+    ei();                                 //global interrupt enable
+    INTCONbits.PEIE=1;                    //to enable TMR2 we should enable  PEIE
+    PIE1bits.TMR2IE=1;                    //TMR2 Interrupt enable 
+    
+    PIR1bits.TMR2IF=0;                   //TMR2 interrupt flag is made 0 initially.
+    T2CONbits.TMR2ON=1;                  //TMR2 is made ON manually whereas  in TMR0  it is automatically switched ON.
+    while(1)
+    {
+     ; 
+    }
+}
+
+void __interrupt() ISR(void)                 // if TMR2 overflows (PR2==194)
+{
+     PIR1bits.TMR2IF=0;                     //made TMR2IF '0' again 
+     LATC7=!LATC7;                          //invert the LATC7 pin for every 1second(1000ms).
+     
+}
+     
+    

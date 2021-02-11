@@ -1,0 +1,149 @@
+// PIC16F1516 Configuration Bit Settings
+
+// 'C' source line config statements
+
+// CONFIG1
+#pragma config FOSC = INTOSC    // Oscillator Selection (INTOSC oscillator: I/O function on CLKIN pin)
+#pragma config WDTE = OFF       // Watchdog Timer Enable (WDT disabled)
+#pragma config PWRTE = OFF      // Power-up Timer Enable (PWRT disabled)
+#pragma config MCLRE = ON       // MCLR Pin Function Select (MCLR/VPP pin function is MCLR)
+#pragma config CP = OFF         // Flash Program Memory Code Protection (Program memory code protection is disabled)
+#pragma config BOREN = ON       // Brown-out Reset Enable (Brown-out Reset enabled)
+#pragma config CLKOUTEN = OFF   // Clock Out Enable (CLKOUT function is disabled. I/O or oscillator function on the CLKOUT pin)
+#pragma config IESO = ON        // Internal/External Switchover (Internal/External Switchover mode is enabled)
+#pragma config FCMEN = ON       // Fail-Safe Clock Monitor Enable (Fail-Safe Clock Monitor is enabled)
+
+// CONFIG2
+#pragma config WRT = OFF        // Flash Memory Self-Write Protection (Write protection off)
+#pragma config VCAPEN = OFF     // Voltage Regulator Capacitor Enable bit (VCAP pin function disabled)
+#pragma config STVREN = ON      // Stack Overflow/Underflow Reset Enable (Stack Overflow or Underflow will cause a Reset)
+#pragma config BORV = LO        // Brown-out Reset Voltage Selection (Brown-out Reset Voltage (Vbor), low trip point selected.)
+#pragma config LPBOR = OFF      // Low-Power Brown Out Reset (Low-Power BOR is disabled)
+#pragma config LVP = ON         // Low-Voltage Programming Enable (Low-voltage programming enabled)
+
+// #pragma config statements should precede project file includes.
+// Use project enums instead of #define for ON and OFF.
+
+#include <xc.h>
+#include<pic16f1516.h>
+#include<stdint.h>
+#define _XTAL_FREQ 4000000                    //fosc is 4MHZ,in order to match __delay_us(20) in LCD function,we use 4 MHZ here too.
+
+void init();                                  //init function.
+uint16_t ADC();                                //ADC function returning temperature
+uint16_t temp=0;                              //global variable
+uint32_t value=0;                             //global variable
+void display(char a,char b) ;
+void display_str(char A[]) ;
+void display_number(uint8_t value,uint8_t size);  //LCD display function
+uint8_t A[]="Temp=   'C";                        //string A
+uint8_t B[]="D.cycle= 0%";                  //default D.cycle is 0% and it will starts changing when temp>50'
+void main()                                  //F=5KHZ,T.period is 200us,varying duty cycle from 50% to 90% based on LM35 
+{                                            //controlling speed of DC motor based on the LM35 temperature sensor.
+    init();                                  //init function
+    while(1)
+    {
+    //we used CCP1 pin as PWM output, so (CCP1M,CCPR1L,DC1B) are used.If we use CCP2 pin as PWM output,we use (CCP2M,CCPR2L,DC2B)
+    temp=ADC();                       //calling ADC function and getting the temperature value.
+    CCP1CONbits.CCP1M = 0b1100;         //PWM mode.
+     if((temp>=50)&&(temp<=90))         //if temp>=50' && temp<=90',only at this condition DC motor should be ON.
+     {
+      CCPR1L=(temp*199)/100;          //D.cycle will be (temp/100)*199.EX:if temp is 75',then 75% of PR2(199)
+      display(0xC8,0);                    //displaying D.cycle
+      display_number(temp,2);             //sending D.cycle value & size is 2
+     }
+     else
+     {
+      CCPR1L=0;                       //if temp<50 or temp>90,D.cycle is 0 that means DC motor is OFF.
+      display(0xC0,0);                //displaying default 0% D.cycle when DC motor is OFF.
+      display_str(B);              
+     }
+    display(0x85,0);                    //displaying temperature
+    display_number(temp,3);             //sending temperature value & size is 3
+    }
+}
+void init()
+{
+    TRISC=LATC=0;                //PORTB & PORTC as output port for L293D & LCD
+    TRISB=LATB=0;
+    TRISA0 = 1;                   //PORTA as input port(LM35)  
+    ANSA0 = 1;                   //INPUT AS analog input(LM35 gives 0 to 1.5v)
+    LATC3=1;                     //for forward direction of the motor initially.
+    LATC4=0;                     //IN1->1(high) & IN2->0(low) for forward direction,for reverse IN1->0(low) & IN2->1(high)
+    OSCCON = 0b01101010;         //4MHZ clk frequency
+    ADCON0 = 0b00000000;         //AN0 AS INPUT PIN,ADON bit is OFF.
+    ADCON1 = 0b10000000;         //FOSC/2,RIGHT JUSTIFY.
+    ADCON0bits.ADON = 1;         //ADC IS ON   
+    
+    T2CONbits.T2CKPS = 0b00;     //prescalar is 1:1,we can't use postscalar for PWM because no TMR2IF is used.
+    T2CONbits.TMR2ON =1;         //tmr2 is ON.TMR2 is always FOSC/4
+    PR2 = 199;                  //time period(200us)is loaded in PR2.(1/4MHZ)is 0.25us,instruction cycle is FOSC/4,so 0.25*4= 1us.
+                                //for 200us T.period(200us/(1us),PR2 is loaded with 199(0 to 199) gives 200 counts.
+                                //(200counts * 1us)gives T.period of 200us.
+    CCPR1L=0;                   //D.cycle initially zero
+    display(0x0E,0);             //display ON ,cursor ON
+    display(0x3C,0);             //ACTIVATING second row of LCD display.
+    display(0x80,0);             //setting cursor on 0x80 
+    display_str(A);              //display string A
+    display(0xC0,0);             //setting cursor on 0xC0 
+    display_str(B);              //display string B
+}
+uint16_t ADC()
+{
+   __delay_us(10);               //acquisition time.
+    ADCON0bits.GO=1;             // conversion of sampled voltage into binary format is started.
+    while(GO_nDONE==1);          // it checks whether the conversion is over,as long as conversion is over repeat the same while loop.
+    value=ADRES;                //instead of using ADRESH & ADRESL,we use ADRES which contains the 10 bit(0 to 1023)ADC value
+                                //ADRES can be only used in RIGHT JUSTIFICATION.
+    value=(value*500)/1023;      //measuring the LM35 sensor value and scaled down to 500.LM35 sensor shows 1.5v for 150' degree
+                                 //1.5v(150') & 0v(0').so scaled down to 500 .Vref is 5V but LM35 gives a max of 1.5v(150')
+    return value;               //returning the temperature value .
+}
+void display_number(uint8_t val,uint8_t size)    //getting temperature value & size for displaying purpose.
+{
+  uint8_t s=0,t=0,u=0,v=0;
+    if(size==4)
+    {
+    s=val%10;
+    t=(val/10)%10;
+    u=(val/100)%10;
+    v=val/1000;
+    display(48+v,1);
+    display(48+u,1);
+    display(48+t,1);
+    display(48+s,1);
+    }
+    else if(size==3)
+    {
+    s=val%10; 
+    t=(val/10)%10;
+    u=val/100;
+    display(48+u,1);
+    display(48+t,1);
+    display(48+s,1);  
+    }
+    else if(size==2)
+    {
+    s=val%10; 
+    t=(val/10);
+    display(48+t,1);
+    display(48+s,1);  
+    }
+}
+void display(char a,char b)           //getting DATA in 'a' & MODE in 'b'.        
+{
+    LATC0=b;                          //command mode(RS->O COMMAND MODE ,RS->1 DATA MODE )
+    LATB=a;                           //data is loaded.
+    LATC1=1;                          //enable
+    __delay_us(20);
+    LATC1=0;                           //disable
+    __delay_us(20);   
+}
+void display_str(char A[])                  //getting the array and declared in char datatype.
+{
+   for(uint8_t i=0 ; A[i]!= '\0'; i++)      //initialize 'i' and  check A[i] != null.
+   {
+    display(A[i],1);                      //function passing the data and mode.
+    __delay_ms(50);                       //delay between each character.
+   }
+}

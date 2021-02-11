@@ -1,0 +1,56 @@
+// PIC16F1516 Configuration Bit Settings
+
+// 'C' source line config statements
+
+// CONFIG1
+#pragma config FOSC = INTOSC    // Oscillator Selection (INTOSC oscillator: I/O function on CLKIN pin)
+#pragma config WDTE = OFF       // Watchdog Timer Enable (WDT disabled)
+#pragma config PWRTE = OFF      // Power-up Timer Enable (PWRT disabled)
+#pragma config MCLRE = ON       // MCLR Pin Function Select (MCLR/VPP pin function is MCLR)
+#pragma config CP = OFF         // Flash Program Memory Code Protection (Program memory code protection is disabled)
+#pragma config BOREN = ON       // Brown-out Reset Enable (Brown-out Reset enabled)
+#pragma config CLKOUTEN = OFF   // Clock Out Enable (CLKOUT function is disabled. I/O or oscillator function on the CLKOUT pin)
+#pragma config IESO = ON        // Internal/External Switchover (Internal/External Switchover mode is enabled)
+#pragma config FCMEN = ON       // Fail-Safe Clock Monitor Enable (Fail-Safe Clock Monitor is enabled)
+
+// CONFIG2
+#pragma config WRT = OFF        // Flash Memory Self-Write Protection (Write protection off)
+#pragma config VCAPEN = OFF     // Voltage Regulator Capacitor Enable bit (VCAP pin function disabled)
+#pragma config STVREN = ON      // Stack Overflow/Underflow Reset Enable (Stack Overflow or Underflow will cause a Reset)
+#pragma config BORV = LO        // Brown-out Reset Voltage Selection (Brown-out Reset Voltage (Vbor), low trip point selected.)
+#pragma config LPBOR = OFF      // Low-Power Brown Out Reset (Low-Power BOR is disabled)
+#pragma config LVP = ON         // Low-Voltage Programming Enable (Low-voltage programming enabled)
+
+// #pragma config statements should precede project file includes.
+// Use project enums instead of #define for ON and OFF.
+
+#include <xc.h>
+#include<pic16f1516.h>
+#include<stdint.h>
+#define _XTAL_FREQ 4000000         //4MHZ
+
+void main()
+{
+    TRISC = LATC =0;               //CCP1 pin as PWM output.(Ton=125us & Toff=125us)50% duty cycle,T.period=250us.
+    
+    // OSCCON = 0b01101010;         //4MHZ internal oscillator frequency.
+    OSCCONbits.SCS=0b10;           // internal oscillator.
+    OSCCONbits.IRCF=0b1101;        //4MHZ internal oscillator frequency.
+   
+    // PR2 used for time period.so we use Tmr2 clock source(T2CKPS) & TMR2ON
+    T2CONbits.T2CKPS = 0b00;       //prescalar is 1:1,we can't use postscalar for PWM because no TMR2IF is used.
+    T2CONbits.TMR2ON =1;           //tmr2 is ON,TMR2 is always FOSC/4
+    PR2 = 249;                     //time period(250us) is loaded in PR2. 1/4MHZ is 0.25us,instruction cycle is FOSC/4,so 0.25*4= 1us.
+                                   //for 250us T.period(250us/1us) gives 250 counts,PR2 is loaded with 249(0 to 249) gives 250 counts & 250us
+    
+    //we used CCP1 pin as PWM output, so (CCP1M,CCPR1L,DC1B) are used.If we use CCP2 pin as PWM output,we use (CCP2M,CCPR2L,DC2B)
+    CCP1CONbits.CCP1M = 0b1100;    //PWM mode.
+    CCPR1L = 125;                  //Ton time should be loaded in CCPR1L,for 50% of 250us,(50/100)*250,gives 125(0001111101) to convert 
+                                   //this into 10 bit left shift 2 times(0111110100) first 8 bit(01111101)is loaded in CCPR1L
+    CCP1CONbits.DC1B = 0b00;       // last two LSB bits 00 is loaded in DC1B.
+   
+    while(1)
+    {
+        ; 
+    }
+}

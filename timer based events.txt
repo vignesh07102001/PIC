@@ -1,0 +1,86 @@
+// PIC16F1516 Configuration Bit Settings
+
+// 'C' source line config statements
+
+// CONFIG1
+#pragma config FOSC = INTOSC    // Oscillator Selection (INTOSC oscillator: I/O function on CLKIN pin)
+#pragma config WDTE = OFF       // Watchdog Timer Enable (WDT disabled)
+#pragma config PWRTE = OFF      // Power-up Timer Enable (PWRT disabled)
+#pragma config MCLRE = ON       // MCLR Pin Function Select (MCLR/VPP pin function is MCLR)
+#pragma config CP = OFF         // Flash Program Memory Code Protection (Program memory code protection is disabled)
+#pragma config BOREN = ON       // Brown-out Reset Enable (Brown-out Reset enabled)
+#pragma config CLKOUTEN = OFF   // Clock Out Enable (CLKOUT function is disabled. I/O or oscillator function on the CLKOUT pin)
+#pragma config IESO = ON        // Internal/External Switchover (Internal/External Switchover mode is enabled)
+#pragma config FCMEN = ON       // Fail-Safe Clock Monitor Enable (Fail-Safe Clock Monitor is enabled)
+
+// CONFIG2
+#pragma config WRT = OFF        // Flash Memory Self-Write Protection (Write protection off)
+#pragma config VCAPEN = OFF     // Voltage Regulator Capacitor Enable bit (VCAP pin function disabled)
+#pragma config STVREN = ON      // Stack Overflow/Underflow Reset Enable (Stack Overflow or Underflow will cause a Reset)
+#pragma config BORV = LO        // Brown-out Reset Voltage Selection (Brown-out Reset Voltage (Vbor), low trip point selected.)
+#pragma config LPBOR = OFF      // Low-Power Brown Out Reset (Low-Power BOR is disabled)
+#pragma config LVP = ON         // Low-Voltage Programming Enable (Low-voltage programming enabled)
+
+// #pragma config statements should precede project file includes.
+// Use project enums instead of #define for ON and OFF.
+
+#include <xc.h>
+#include<pic16f1516.h>
+#include<stdint.h>
+void gpioinit();
+void tmr0init();
+void interruptinit();
+uint16_t count_t0 = 0;           //global variable
+uint16_t count_t1 =0;            //global variable
+uint16_t count_t2 =0;            //global variable
+void main()
+{
+    gpioinit();            //GPIO init
+    tmr0init();            //TMR0 interrupt init
+    interruptinit();       //interrupt enable init
+    while(1)
+    {
+     ;  
+    }
+}
+void gpioinit()                 //init function.
+{
+   TRISB = 0;                   //PORTB as output
+   LATB=0; 
+}
+void tmr0init()                 //TMR0 interrupt function
+{
+ OPTION_REGbits.TMR0CS = 0;     //clock signal source.
+ OPTION_REGbits.PSA = 1;        //prescalar ON or OFF(0->ON / 1->OFF )  
+ TMR0 = TMR0 + 256 - 125 +3 ;   //initially set the timer from 131 to 256(1 ms) 
+}
+void interruptinit()             //all interrupts enable function
+{
+    ei();                          //global interrupt enable
+    INTCONbits.TMR0IE = 1;         //timer interrupt enable
+    INTCONbits.TMR0IF = 0;         //TMR0 interrupt flag is disabled.
+}
+void __interrupt() ISR(void)                 // subroutine code
+{
+     INTCONbits.TMR0IF = 0;                  //Timer flag is set 0 when it is 1.
+     TMR0 = TMR0 + 256 - 125 +3 ;            //loading the TMR0 value again from 131 to 256.
+     count_t0++;                             //incremented once.
+     if(count_t0 == 125)                     //event:1 changes every 250ms(125ms ON + 125ms OFF)
+       {
+         count_t0 =0;                        //again starts counting 250ms
+         LATB0=!LATB0;                      //blinks at every 250ms(125ms ON + 125ms OFF)                     
+         count_t1++;
+            if(count_t1 == 2)               //event:2 changes every 500ms(250ms ON + 250ms OFF)
+              {
+             count_t1=0;                    //again starts counting 500ms
+             LATB1=!LATB1;                  //blinks at every 500ms(250ms ON + 250ms OFF) 
+              }
+         count_t2++;
+            if(count_t2 == 4)               //event:3 changes every 1000ms(500ms ON + 5000ms OFF)
+              {
+             count_t2=0;                    //again starts counting 1000ms
+             LATB2=!LATB2;                   //blinks at every 1000ms(500ms ON + 500ms OFF) 
+              } 
+       }
+}
+    

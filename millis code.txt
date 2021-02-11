@@ -1,0 +1,109 @@
+// PIC16F1516 Configuration Bit Settings
+
+// 'C' source line config statements
+
+// CONFIG1
+#pragma config FOSC = INTOSC    // Oscillator Selection (INTOSC oscillator: I/O function on CLKIN pin)
+#pragma config WDTE = OFF       // Watchdog Timer Enable (WDT disabled)
+#pragma config PWRTE = OFF      // Power-up Timer Enable (PWRT disabled)
+#pragma config MCLRE = ON       // MCLR Pin Function Select (MCLR/VPP pin function is MCLR)
+#pragma config CP = OFF         // Flash Program Memory Code Protection (Program memory code protection is disabled)
+#pragma config BOREN = ON       // Brown-out Reset Enable (Brown-out Reset enabled)
+#pragma config CLKOUTEN = OFF   // Clock Out Enable (CLKOUT function is disabled. I/O or oscillator function on the CLKOUT pin)
+#pragma config IESO = ON        // Internal/External Switchover (Internal/External Switchover mode is enabled)
+#pragma config FCMEN = ON       // Fail-Safe Clock Monitor Enable (Fail-Safe Clock Monitor is enabled)
+
+// CONFIG2
+#pragma config WRT = OFF        // Flash Memory Self-Write Protection (Write protection off)
+#pragma config VCAPEN = OFF     // Voltage Regulator Capacitor Enable bit (VCAP pin function disabled)
+#pragma config STVREN = ON      // Stack Overflow/Underflow Reset Enable (Stack Overflow or Underflow will cause a Reset)
+#pragma config BORV = LO        // Brown-out Reset Voltage Selection (Brown-out Reset Voltage (Vbor), low trip point selected.)
+#pragma config LPBOR = OFF      // Low-Power Brown Out Reset (Low-Power BOR is disabled)
+#pragma config LVP = ON         // Low-Voltage Programming Enable (Low-voltage programming enabled)
+
+// #pragma config statements should precede project file includes.
+// Use project enums instead of #define for ON and OFF.
+
+#include <xc.h>
+#include<pic16f1516.h>
+#include<stdint.h>
+#define _XTAL_FREQ 500000
+uint32_t millis = 0;                           //millis variable
+void gpioinit();                                
+void tmr0init();
+void interruptinit();
+void display(char a,char b);                  //command or data mode           
+void display_str(char A[]) ;                  //display string
+void main()
+{
+    char A[]= "Time Since Power ";            //string
+    uint8_t val1=0,val2=0,val3=0;             //local variables
+    uint16_t seconds=0;                       //local variable
+    gpioinit();                              //GPIO init
+    tmr0init();                              //TMR0 interrupt init
+    interruptinit();                          //interrupt enable init
+    display(0x0E,0);                          //display ON ,cursor ON
+    display(0x3C,0);                          //ACTIVATING second row of LCD display.
+    display(0x80,0);                          //setting cursor on first  row.
+    display_str(A);                           //display string initially
+    while(1)
+    {
+     if(RA0)                                   //if switch pressed
+     {
+         while(RA0)                           //wait
+         {
+             ;
+         }
+         seconds=millis/1000;                 //1000 ms = 1 second
+         val1=seconds % 10;                   //1's digit
+         val2=(seconds/10)%10;                //10's digit
+         val3=seconds/100;                    //100's digit
+         display(0xC0,0);                     //set cursor at second row
+         display(val3 + 48,1);                //100's digit
+         display(val2 +48,1);                 //10's digit
+         display(val1 + 48,1);                //1's digit
+     }
+    }
+}
+void gpioinit()                 //init function.
+{
+    LATB=LATC=0;                
+    TRISB=TRISC=0;               //LCD output
+    TRISA0=1;                    //input port
+    ANSA0=0;                     //digital input
+}
+void tmr0init()                 //TMR0 interrupt function
+{
+ OPTION_REGbits.TMR0CS = 0;     //clock signal source.(FOSC/4).FOSC=500KHZ
+ OPTION_REGbits.PSA = 1;        //prescalar ON or OFF(0->ON / 1->OFF )  
+ TMR0 = TMR0 + 256 - 125 +3 ;   //initially set the timer from 131 to 256(1 ms) 
+}
+void interruptinit()             //all interrupts enable function
+{
+    ei();                          //global interrupt enable
+    INTCONbits.TMR0IE = 1;         //timer interrupt enable 
+    INTCONbits.TMR0IF = 0;         //TMR0 interrupt flag is disabled.
+}
+ void display(char a,char b)           //getting DATA in 'a' & MODE in 'b'.        
+{
+    LATC0=b;                          //command mode(RS->O COMMAND MODE ,RS->1 DATA MODE )
+    LATB=a;                           //data is loaded.
+    LATC1=1;                          //enable
+    __delay_us(20);
+    LATC1=0;                           //disable
+    __delay_us(20);   
+}
+ void display_str(char A[])                  //getting the array and declared in char datatype.
+{
+    for(uint8_t i=0 ; A[i]!= '\0'; i++)    //initialize 'i' and  check A[i] != null.
+     {
+         display(A[i],1);                  //function passing the data and mode.
+         __delay_ms(50);                   //delay between each character.
+     }
+}
+void __interrupt() ISR(void)                 // subroutine code
+{         
+     INTCONbits.TMR0IF = 0;                  //Timer flag is set 0 when it is 1.
+     TMR0 = TMR0 + 256 - 125 +3 ;            //loading the TMR0 value again from 131 to 256.
+     millis++;                             //incremented once for every 1ms. 
+}

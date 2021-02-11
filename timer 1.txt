@@ -1,0 +1,103 @@
+// PIC16F1516 Configuration Bit Settings
+
+// 'C' source line config statements
+
+// CONFIG1
+#pragma config FOSC = INTOSC    // Oscillator Selection (INTOSC oscillator: I/O function on CLKIN pin)
+#pragma config WDTE = OFF       // Watchdog Timer Enable (WDT disabled)
+#pragma config PWRTE = OFF      // Power-up Timer Enable (PWRT disabled)
+#pragma config MCLRE = ON       // MCLR Pin Function Select (MCLR/VPP pin function is MCLR)
+#pragma config CP = OFF         // Flash Program Memory Code Protection (Program memory code protection is disabled)
+#pragma config BOREN = ON       // Brown-out Reset Enable (Brown-out Reset enabled)
+#pragma config CLKOUTEN = OFF   // Clock Out Enable (CLKOUT function is disabled. I/O or oscillator function on the CLKOUT pin)
+#pragma config IESO = ON        // Internal/External Switchover (Internal/External Switchover mode is enabled)
+#pragma config FCMEN = ON       // Fail-Safe Clock Monitor Enable (Fail-Safe Clock Monitor is enabled)
+
+// CONFIG2
+#pragma config WRT = OFF        // Flash Memory Self-Write Protection (Write protection off)
+#pragma config VCAPEN = OFF     // Voltage Regulator Capacitor Enable bit (VCAP pin function disabled)
+#pragma config STVREN = ON      // Stack Overflow/Underflow Reset Enable (Stack Overflow or Underflow will cause a Reset)
+#pragma config BORV = LO        // Brown-out Reset Voltage Selection (Brown-out Reset Voltage (Vbor), low trip point selected.)
+#pragma config LPBOR = OFF      // Low-Power Brown Out Reset (Low-Power BOR is disabled)
+#pragma config LVP = ON         // Low-Voltage Programming Enable (Low-voltage programming enabled)
+
+// #pragma config statements should precede project file includes.
+// Use project enums instead of #define for ON and OFF.
+
+#include <xc.h>
+#include<pic16f1516.h>
+#include<stdint.h>
+void gpioinit();
+void hrwintinit();
+void tmr1init();
+void interruptinit();
+uint16_t count_t0 = 0;           //global variable
+uint16_t count_t1 =0;            //global variable
+uint16_t count_t2 =0;            //global variable
+void main()
+{
+    gpioinit();            //GPIO init
+    tmr1init();            //TMR1 interrupt init
+    interruptinit();       //interrupt enable init
+    hrwintinit();
+    while(1)
+    {
+     ;  
+    }
+}
+void gpioinit()                 //init function.
+{
+   TRISC = 0;                   //PORTC as output
+   LATC=0; 
+   TRISB0=1;                   //hardware INT input pin
+   ANSB0=0;
+}
+void tmr1init()                       //TMR1 interrupt function
+{
+    T1CONbits.TMR1CS =0b00;             //TMR1 clock source.(FOSC/4).FOSC=500KHZ
+    T1CONbits.T1CKPS =0b00;             //prescalar OFF.
+    TMR1 =TMR1 + 65536 - 15625 + 5;     //(timer1 starts at((65535-15625)=49911 and count upto 65536 gives 125 ms and overflows at 65536 and again starts from 49911)
+    T1CONbits.TMR1ON =1;              //TMR1 is made ON(TMR1 should be manually ON & OFF)   
+}
+void hrwintinit()               //Hardware interrupt function
+{
+   INTCONbits.INTF=0;           // hardware INTERRUPT flag is made 0 initially
+   OPTION_REGbits.INTEDG=0;     //interrupt on falling edge.
+   PIR1bits.TMR1IF =0;          //TMR1 interrupt flag is made 0
+}
+void interruptinit()             //all interrupts enable function
+{
+    ei();                          //global interrupt enable
+    INTCONbits.PEIE =1;            //to enable TMR1, PEIE bit should be enabled
+    PIE1bits.TMR1IE =1;            //TMR1 interrupt enable
+    INTCONbits.INTE=1;             //hardware interrupt enabled(hardware interrupt is either '0' or '1' from a button but not POT values)
+}
+void __interrupt() ISR(void)                 // subroutine code
+{
+    if(PIR1bits.TMR1IF)                      //check if it is TMR1 interrupt
+    {
+      PIR1bits.TMR1IF =0;                    //made TMR1 flag as 0.                
+      TMR1 =TMR1 + 65536 - 15625 + 5;        //loaded TMR1 with 125 ms(125000us/8us=15625) and 2^16=65536 so(65536-15625) = 49911 hence,from 49911 to 65536 it gives 125ms and overflow.
+      T1CONbits.TMR1ON =1;                   //TMR1 is OFF after flag set so we should ON the TMR1
+      LATC0=!LATC0;                          //event:1 changes every 250ms(125ms ON + 125ms OFF)
+      count_t1++;
+        if(count_t1==2)                      //check if it is 250 ms(125 x 2)
+          {
+          count_t1=0;                        //again starts counting 250 ms
+          LATC1=!LATC1;                      //event:2 changes every 500ms(250ms ON + 250ms OFF)
+          count_t2++;
+          if(count_t2==2)                    //check if it is 500 ms(250 x 2)
+          {
+            count_t2=0;                      //again starts counting 500 ms
+            LATC2=!LATC2;                    //event:3 changes every 1000ms(500ms ON + 5000ms OFF)
+          } 
+         }
+    }
+    if(INTCONbits.INTF)                      //check if it is hardware interrupt
+    {
+        INTCONbits.INTF=0;                   //hardwareflag is made 0.
+        LATC3=!LATC3;                        //invert LED connected to LATC3 on falling edge of interrupt.
+    }   
+}
+     
+    

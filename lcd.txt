@@ -1,0 +1,76 @@
+
+// PIC16F1934 Configuration Bit Settings
+
+// 'C' source line config statements
+
+// CONFIG1
+#pragma config FOSC = INTOSC    // Oscillator Selection (INTOSC oscillator: I/O function on CLKIN pin)
+#pragma config WDTE = OFF       // Watchdog Timer Enable (WDT disabled)
+#pragma config PWRTE = OFF      // Power-up Timer Enable (PWRT disabled)
+#pragma config MCLRE = ON       // MCLR Pin Function Select (MCLR/VPP pin function is MCLR)
+#pragma config CP = OFF         // Flash Program Memory Code Protection (Program memory code protection is disabled)
+#pragma config CPD = OFF        // Data Memory Code Protection (Data memory code protection is disabled)
+#pragma config BOREN = ON       // Brown-out Reset Enable (Brown-out Reset enabled)
+#pragma config CLKOUTEN = OFF   // Clock Out Enable (CLKOUT function is disabled. I/O or oscillator function on the CLKOUT pin)
+#pragma config IESO = ON        // Internal/External Switchover (Internal/External Switchover mode is enabled)
+#pragma config FCMEN = ON       // Fail-Safe Clock Monitor Enable (Fail-Safe Clock Monitor is enabled)
+
+// CONFIG2
+#pragma config WRT = OFF        // Flash Memory Self-Write Protection (Write protection off)
+#pragma config VCAPEN = OFF     // Voltage Regulator Capacitor Enable (All VCAP pin functionality is disabled)
+#pragma config PLLEN = ON       // PLL Enable (4x PLL enabled)
+#pragma config STVREN = ON      // Stack Overflow/Underflow Reset Enable (Stack Overflow or Underflow will cause a Reset)
+#pragma config BORV = LO        // Brown-out Reset Voltage Selection (Brown-out Reset Voltage (Vbor), low trip point selected.)
+#pragma config LVP = ON         // Low-Voltage Programming Enable (Low-voltage programming enabled)
+
+// #pragma config statements should precede project file includes.
+// Use project enums instead of #define for ON and OFF.
+
+#include <xc.h>
+#include<stdint.h>
+
+#define _XTAL_FREQ 500000
+
+void display(char a,char b);     //function declaration.
+uint8_t i,j,count=0;
+        
+void main()
+{
+    TRISC=TRISD=0;
+    LATC=LATD=0;
+    TRISA0=1;                    //button input
+    ANSA0=0;                      //digital input
+    display(0x0E,0);              //cursor on command
+     
+    while(1)
+   {
+     if(RA0)                       //button pressed
+     {
+       while(RA0);                 //wait untill released
+         i=count/10;               // get 10's digit
+         j=count%10;               // get 1's digit
+         display(0x80,0);          //funcion call
+         display(i+48,1);          //(10's digit value + 48(ASCII OF '0'))
+         display(j+48,1);          //(1'S digit value + 48(ASCII OF '0'))
+         count++;
+         if(count==100)
+         {
+         count=0;
+         }  
+     }
+     // display('A',1);          //whatever present in single quotes it will be displayed
+     // display(66,1);           //if there is no single quote the ASCII value of the number is printed,
+                                 //66 is ASCII value of B.
+  }
+}
+void display(char a,char b)          //get data value and (command mode/data mode.)
+{
+    LATD0=b;              //select command/data mode(RS->O COMMAND MODE, RS->1 DATA MODE)
+    LATC=a;               //data loaded
+    LATD1=1;               //enable
+    __delay_us(20);
+    LATD1=0;               //disable
+    __delay_us(20);    
+}
+   
+    

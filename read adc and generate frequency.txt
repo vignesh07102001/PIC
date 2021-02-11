@@ -1,0 +1,148 @@
+// PIC16F1516 Configuration Bit Settings
+
+// 'C' source line config statements
+
+// CONFIG1
+#pragma config FOSC = INTOSC    // Oscillator Selection (INTOSC oscillator: I/O function on CLKIN pin)
+#pragma config WDTE = OFF       // Watchdog Timer Enable (WDT disabled)
+#pragma config PWRTE = OFF      // Power-up Timer Enable (PWRT disabled)
+#pragma config MCLRE = ON       // MCLR Pin Function Select (MCLR/VPP pin function is MCLR)
+#pragma config CP = OFF         // Flash Program Memory Code Protection (Program memory code protection is disabled)
+#pragma config BOREN = ON       // Brown-out Reset Enable (Brown-out Reset enabled)
+#pragma config CLKOUTEN = OFF   // Clock Out Enable (CLKOUT function is disabled. I/O or oscillator function on the CLKOUT pin)
+#pragma config IESO = ON        // Internal/External Switchover (Internal/External Switchover mode is enabled)
+#pragma config FCMEN = ON       // Fail-Safe Clock Monitor Enable (Fail-Safe Clock Monitor is enabled)
+
+// CONFIG2
+#pragma config WRT = OFF        // Flash Memory Self-Write Protection (Write protection off)
+#pragma config VCAPEN = OFF     // Voltage Regulator Capacitor Enable bit (VCAP pin function disabled)
+#pragma config STVREN = ON      // Stack Overflow/Underflow Reset Enable (Stack Overflow or Underflow will cause a Reset)
+#pragma config BORV = LO        // Brown-out Reset Voltage Selection (Brown-out Reset Voltage (Vbor), low trip point selected.)
+#pragma config LPBOR = OFF      // Low-Power Brown Out Reset (Low-Power BOR is disabled)
+#pragma config LVP = ON         // Low-Voltage Programming Enable (Low-voltage programming enabled)
+
+// #pragma config statements should precede project file includes.
+// Use project enums instead of #define for ON and OFF.
+
+#include <xc.h>
+#include<stdint.h>
+#define _XTAL_FREQ 500000
+uint16_t val1=0,val2=0;                       //16 bit global variables
+uint32_t val=0,voltage=0;
+void init();                                  //init function.
+uint8_t ADC();                                //ADC function.
+void display(char a,char b);                
+void display_str(char E[]) ; 
+uint8_t LCD(uint8_t x);                       //LCD function
+void main()
+{
+    char A[]= "TIME =     us";      //time string
+    char B[]= "FREQ=      hz";      //freq string
+    init();
+    display(0x80,0);               //setting cursor on first  row.
+    display_str(A);                //display first string.
+    display(0xC0,0);               //setting cursor on second  row.
+    display_str(B);                //function passing the SECOND ARRAY. 
+    T2CONbits.T2CKPS=0b00;          //prescalar is 1:1(1 tick=8us),if prescalar 1:16(1 tick = 16*8us).
+    T2CONbits.T2OUTPS=0b0000;       // postscalar is 1:1(250*8us gives  interrupt flag=1 ) 
+                                    //if postscalar is 1:16(250*8us*16 gives  interrupt flag=1 )
+    PIE1bits.TMR2IE=1;             //TMR2 Interrupt enable 
+    INTCONbits.PEIE=1;            //to enable TMR2 we should enable  PEIE
+    ei();                         //global interrupt enable
+    PIR1bits.TMR2IF=0;            //TMR2 interrupt flag is made 0 initially.
+    T2CONbits.TMR2ON=1;            //TMR2 is made ON
+    while(1)
+   {
+    PR2=ADC();                      //calling ADC function and load the value in PR2
+    voltage=ADC();                  //calling ADC function and getting the voltage
+    LCD(voltage);                   //sending voltage to LCD function 
+   }
+}
+ 
+void init()
+{
+    TRISA0=1;                       //POT input  AN0.
+    ANSA0=0;
+    TRISB=TRISC=0;                 //LCD ports
+    LATB=LATC=0;
+    OSCCON = 0b01010010;           //500 Khz clk frequency
+    ADCON0 = 0b00000000;           //AN0 AS INPUT PIN,ADON bit is OFF.
+    ADCON1 = 0b10000000;           //FOSC/2,RIGHT JUSTIFY.
+    ADCON0bits.ADON = 1;            //ADC IS ON   
+    display(0x0E,0);                //display ON ,cursor ON
+    display(0x3C,0);                //ACTIVATING second row of LCD display.
+}
+uint8_t ADC()
+{
+   __delay_us(10);              //acquisition time.
+    ADCON0bits.GO=1;             // conversion of sampled voltage into binary format is started.
+    while(GO_nDONE==1);           // it checks whether the conversion is over,as long as conversion is over repeat the same while loop.
+    val1=ADRESH;                 //8 BIT MSB value
+    val2=ADRESL;                 //8 BIT  LSB VALUE
+    val=(val2|(val1<<8));        //8 BIT MSB(val 1) VALUE IS LEFT SHIFTED
+    val = (val*249)/1023;         //scale down to 249 ( value to be loaded in  PR2)
+    return val;                  //returning the PR2 value. for TIMER 2.
+}
+uint8_t LCD(uint8_t x)              //getting the PR2 value
+{
+    uint16_t time=0;                         //time variable
+    uint32_t freq=0;                         //freq variable
+    uint8_t m,n,p,q,g,h,i,j;                 //local variables
+    time=(x+1)*16;           //TMR2 overflows at 250(0 to 249)so x+1(1 high to low pulse takes 8us,so for a 
+                             //full time period 2 such pulses(2 x 8us gives 16us),EX:if PR2 is 249,then
+                             //(250 x 16) time period is 4000us(4 ms) & 4000us is MAXIMUM Time period &
+                             //250hz(1000000us / 4000us) is the minimum freq.
+   
+    if(time<192)      //setting MIN time period as 192us(96us X 2) & MAX freq is(1000000us / 192us) 5208HZ.
+        time=192;
+   
+     m=time%10;                     
+     n=(time/10)%10;                     
+     p=(time/100)%10;
+     q=time/1000;
+    display(0x86,0);             //setting cursor at 0x86
+    display(q+48,1);              //displaying 1000's digit
+    display(0x87,0);              //setting cursor at 0x87
+    display(p+48,1);                //displaying 100's digit
+    display(0x88,0);               //setting cursor at 0x88
+    display(n+48,1);              //displaying 10's digit
+    display(0x89,0);               //setting cursor at 0x89
+    display(m+48,1);                //displaying 1's digit
+     freq=(1000000/time);           //freq=(1/time),time is in us,so (1/time)should be written as (1000000/time)
+     g=freq%10;                    
+     h=(freq/10)%10;                    
+     i=(freq/100)%10;
+     j=freq/1000;
+    display(0xC6,0);             //setting cursor at 0xC6
+    display(j+48,1);              //displaying 1000's digit
+    display(0xC7,0);              //setting cursor at 0xC7
+    display(i+48,1);                //displaying 100's digit
+    display(0xC8,0);               //setting cursor at 0xC8
+    display(h+48,1);              //displaying 10's digit
+    display(0xC9,0);               //setting cursor at 0xC9
+    display(g+48,1);               //displaying 1's digit
+}
+ void display(char a,char b)           //getting DATA in 'a' & MODE in 'b'.        
+{
+    LATC0=b;                          //command mode(RS->O COMMAND MODE ,RS->1 DATA MODE )
+    LATB=a;                           //data is loaded.
+    LATC1=1;                          //enable
+    __delay_us(20);
+    LATC1=0;                           //disable
+    __delay_us(20);   
+}
+void display_str(char E[])                  //getting the array and declared in char datatype.
+{
+    for(uint8_t i=0 ; E[i]!= '\0'; i++)    //initialize 'i' and  check E[i] != null.
+     {
+         display(E[i],1);                  //function passing the data and mode.
+         __delay_ms(20);                   //delay between each character.
+     }
+}
+void __interrupt() ISR(void)                 // if TMR2 overflows
+{
+     PIR1bits.TMR2IF=0;                     //made TMR2IF = 0.                         
+      LATC7=!LATC7;                         //invert the LATC7 pin based on the PR2 value and generate frequency.    
+}
+
+      

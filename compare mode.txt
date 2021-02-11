@@ -1,0 +1,85 @@
+// PIC16F1516 Configuration Bit Settings
+
+// 'C' source line config statements
+
+// CONFIG1
+#pragma config FOSC = INTOSC    // Oscillator Selection (INTOSC oscillator: I/O function on CLKIN pin)
+#pragma config WDTE = OFF       // Watchdog Timer Enable (WDT disabled)
+#pragma config PWRTE = OFF      // Power-up Timer Enable (PWRT disabled)
+#pragma config MCLRE = ON       // MCLR Pin Function Select (MCLR/VPP pin function is MCLR)
+#pragma config CP = OFF         // Flash Program Memory Code Protection (Program memory code protection is disabled)
+#pragma config BOREN = ON       // Brown-out Reset Enable (Brown-out Reset enabled)
+#pragma config CLKOUTEN = OFF   // Clock Out Enable (CLKOUT function is disabled. I/O or oscillator function on the CLKOUT pin)
+#pragma config IESO = ON        // Internal/External Switchover (Internal/External Switchover mode is enabled)
+#pragma config FCMEN = ON       // Fail-Safe Clock Monitor Enable (Fail-Safe Clock Monitor is enabled)
+
+// CONFIG2
+#pragma config WRT = OFF        // Flash Memory Self-Write Protection (Write protection off)
+#pragma config VCAPEN = OFF     // Voltage Regulator Capacitor Enable bit (VCAP pin function disabled)
+#pragma config STVREN = ON      // Stack Overflow/Underflow Reset Enable (Stack Overflow or Underflow will cause a Reset)
+#pragma config BORV = LO        // Brown-out Reset Voltage Selection (Brown-out Reset Voltage (Vbor), low trip point selected.)
+#pragma config LPBOR = OFF      // Low-Power Brown Out Reset (Low-Power BOR is disabled)
+#pragma config LVP = ON         // Low-Voltage Programming Enable (Low-voltage programming enabled)
+
+// #pragma config statements should precede project file includes.
+// Use project enums instead of #define for ON and OFF.
+
+#include <xc.h>
+#include<pic16f1516.h>
+#include<stdint.h>
+#define _XTAL_FREQ 500000
+void init();
+void tmr1init();
+void interruptinit();
+void main()
+{
+   init();                           //init function
+   tmr1init();                       //tmr1init function
+   interruptinit();                  //interruptinit function.
+   
+   PIR2bits.CCP2IF=0;                //made CCP2IF 0 initially.
+   CCPR2 = 0;                        //load CCPR2 0 initially.
+   CCP2CONbits.CCP2M=0b1001;         //compare mode:set the output as high mode
+   CCPR2 = CCPR2+(800000/16);        //load CCPR2=800ms(800000/16 = 50000counts)if prescalar is 1:1,then 100000counts(out of range)
+                                     //(stay in high mode untill CCPR2 & TMR1 equals to 50000 counts )
+   while(1)
+   {
+     ;
+   }
+}
+void init()
+{
+   TRISC=LATC=0;                       //CCP2 pin as PWM output pin,so we use (CCP2IE,CCP2IF,CCP2M,CCPR2)
+}
+void tmr1init()                        //TMR1 & CCPR2 are compared and low->high or high->low events are occured
+{
+   TMR1=0;                             //TMR1 value is made 0 initially.
+   T1CONbits.TMR1CS =0b00;             //TMR1 clock source.(FOSC/4).F=500KHZ
+   T1CONbits.T1CKPS =0b01;             //prescalar is 1:2,so only we divide by 16(800000/(8*2 prescalar)) & (200000/(8*2 prescalar))
+   T1CONbits.TMR1ON =1;                //TMR1 is made ON(TMR1 should be manually ON & OFF) ,no need to use TMR1IE  
+}
+void interruptinit()
+{
+    ei();                                 //global interrupt enable
+    INTCONbits.PEIE=1;                    //to enable CCP2IE, we should enable  PEIE
+    PIE2bits.CCP2IE=1;                    //enable CCP2IE
+    PIR2bits.CCP2IF=0;                    //made CCP2IF 0 initially.
+}
+void __interrupt() ISR(void)             //CCP2IF will set on every (high to low) or every (low to high).
+{
+    static uint8_t ccpflag=0;             //ccpflag is used to switch compare mode from high-low as well as from low-high.
+    PIR2bits.CCP2IF=0;                    //when 800ms is reached(50000counts),flag will be '1',we should made it '0' again.
+    if(ccpflag==0)                        //if ccpflag==0 (i.e) pulse is already in high
+    {
+        ccpflag=1;                        //made the ccpflag=1
+        CCPR2 = CCPR2+(200000/16);        //load CCPR2=200ms(200000/16 = 12500 counts)
+        CCP2CONbits.CCP2M=0b1000;         //compare mode:set the output as low mode and stay in lowmode  for next 200ms 
+                                          //again CCP2IF is set as 1,and again we load CCPR2 with 800ms high.
+    }
+    else                                  //if ccpflag==1 (i.e) pulse is already in low
+    {
+        ccpflag=0;                        //made the ccpflag=0
+        CCPR2 = CCPR2+(800000/16);        //load CCPR2=800ms(800000/16 = 50000counts)
+        CCP2CONbits.CCP2M=0b1001;         //compare mode:set the output as high mode and it will stay in high mode for 800ms.
+    }   
+}

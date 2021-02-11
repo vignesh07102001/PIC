@@ -1,0 +1,76 @@
+// PIC16F1516 Configuration Bit Settings
+
+// 'C' source line config statements
+
+// CONFIG1
+#pragma config FOSC = INTOSC    // Oscillator Selection (INTOSC oscillator: I/O function on CLKIN pin)
+#pragma config WDTE = OFF       // Watchdog Timer Enable (WDT disabled)
+#pragma config PWRTE = OFF      // Power-up Timer Enable (PWRT disabled)
+#pragma config MCLRE = ON       // MCLR Pin Function Select (MCLR/VPP pin function is MCLR)
+#pragma config CP = OFF         // Flash Program Memory Code Protection (Program memory code protection is disabled)
+#pragma config BOREN = ON       // Brown-out Reset Enable (Brown-out Reset enabled)
+#pragma config CLKOUTEN = OFF   // Clock Out Enable (CLKOUT function is disabled. I/O or oscillator function on the CLKOUT pin)
+#pragma config IESO = ON        // Internal/External Switchover (Internal/External Switchover mode is enabled)
+#pragma config FCMEN = ON       // Fail-Safe Clock Monitor Enable (Fail-Safe Clock Monitor is enabled)
+
+// CONFIG2
+#pragma config WRT = OFF        // Flash Memory Self-Write Protection (Write protection off)
+#pragma config VCAPEN = OFF     // Voltage Regulator Capacitor Enable bit (VCAP pin function disabled)
+#pragma config STVREN = ON      // Stack Overflow/Underflow Reset Enable (Stack Overflow or Underflow will cause a Reset)
+#pragma config BORV = LO        // Brown-out Reset Voltage Selection (Brown-out Reset Voltage (Vbor), low trip point selected.)
+#pragma config LPBOR = OFF      // Low-Power Brown Out Reset (Low-Power BOR is disabled)
+#pragma config LVP = ON         // Low-Voltage Programming Enable (Low-voltage programming enabled)
+
+// #pragma config statements should precede project file includes.
+// Use project enums instead of #define for ON and OFF.
+
+#include <xc.h>
+#include<pic16f1516.h>
+#include<stdint.h>
+#define _XTAL_FREQ 16000000           //(FOSC/4).F=16MHZ for delay macros same as OSCCON frequency.
+void init();
+void tmr1init();                    //PWM using Timer1 & compare mode.For getting 180 steps(high resolution)we use Timer1(16 bit) for PWM,instead of Timer2(8 bit).
+uint16_t x=1000;                    //5% of 20ms is 1000ms,which is -90 degree of servo motor,servo starts from -90' 
+                                    //and increment on every steps and reaches +90'(total of 180 steps)
+void main()                         //generate PWM using comparemode for servo motor.F=50HZ,T.period=20ms(20000us)
+{                                   //for -90'(D.cycle is 1ms) & for 0'(D.cycle is 1.5ms)& for +90'(D.cycle is 2ms).
+   init();                           //init function
+   tmr1init();                       //tmr1init function
+   
+   PIR2bits.CCP2IF=0;                //made CCP2IF 0 initially.
+   CCPR2 = 0;                        //load CCPR2 0 initially.
+ 
+   while(1)
+   { 
+    for(x=1000;x<=2000;x+=5)         //-90'->1ms(5% of 20ms),so 5% of 20000us is '1000'.
+    {                                //+90'->2ms(10% of 20ms),so 10% of 20000us is '2000'.From -90' to +90'(180 steps)
+                             //(2000-1000)gives 1000.so(1000/180 steps)gives 5.incrementing the Ton value by 5 on each steps.
+     CCP2CONbits.CCP2M=0b1001;         //compare mode:set the output as high mode
+     CCPR2 = CCPR2+(x/0.5);            //load CCPR2=Ton value.[Ton(x)/time taken for 1 tick(0.5us)]                               
+     PIR2bits.CCP2IF=0;                //made CCP2IF 0 initially.
+     while(PIR2bits.CCP2IF ==0)        //(wait in high mode untill CCPR2 & TMR1 equals to CCPR2 count )
+        ;                              //when Ton ends CCP2IF overflow and we load the Toff value.
+     
+     __delay_ms(500);                  //500ms delay between each steps(180 steps)
+     
+     CCP2CONbits.CCP2M=0b1000;         //compare mode:set the output as low mode
+     CCPR2 = CCPR2+((20000-x)/0.5);    //load CCPR2=Toff value.Toff=[T.PERIOD(20ms) - Ton(x)]/time taken for 1 tick(0.5us).                                
+     PIR2bits.CCP2IF=0;                //made CCP2IF 0 everytime after it overflows.
+     while(PIR2bits.CCP2IF ==0)        //(wait in low mode untill CCPR2 & TMR1 equals to CCPR2 count )
+       ;                                //when Toff ends CCP2IF overflow and we load the Ton value again & loop continues.
+    }                                   //for loop continues for 180 sreps.
+  }
+}
+void init()
+{
+   TRISC=LATC=0;                       //CCP2 pin as PWM output pin,so we use (CCP2IE,CCP2IF,CCP2M,CCPR2)
+   OSCCON=0b01111010;                  //16 MHZ internal oscillator frequency
+}
+void tmr1init()                        //TMR1 & CCPR2 are compared and frequency is generated accordingly.
+{
+   TMR1=0;                             //TMR1 value is made 0 initially.
+   T1CONbits.TMR1CS =0b00;             //TMR1 clock source(FOSC/4).so(1/16000000)=0.0625,then FOSC/4(0.0625*4)=0.25us.
+                                       //0.25us*2 prescalar gives 0.5us.so (20000us/0.5us)gives 40000 ticks(20ms),T.period=20ms.
+   T1CONbits.T1CKPS =0b01;             //prescalar is 1:2.[1 tick takes 0.5us]
+   T1CONbits.TMR1ON =1;                //TMR1 is made ON(TMR1 should be manually ON & OFF) ,no need to use TMR1IE  
+}

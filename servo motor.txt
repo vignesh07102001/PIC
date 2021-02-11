@@ -1,0 +1,100 @@
+// PIC16F1516 Configuration Bit Settings
+
+// 'C' source line config statements
+
+// CONFIG1
+#pragma config FOSC = INTOSC    // Oscillator Selection (INTOSC oscillator: I/O function on CLKIN pin)
+#pragma config WDTE = OFF       // Watchdog Timer Enable (WDT disabled)
+#pragma config PWRTE = OFF      // Power-up Timer Enable (PWRT disabled)
+#pragma config MCLRE = ON       // MCLR Pin Function Select (MCLR/VPP pin function is MCLR)
+#pragma config CP = OFF         // Flash Program Memory Code Protection (Program memory code protection is disabled)
+#pragma config BOREN = ON       // Brown-out Reset Enable (Brown-out Reset enabled)
+#pragma config CLKOUTEN = OFF   // Clock Out Enable (CLKOUT function is disabled. I/O or oscillator function on the CLKOUT pin)
+#pragma config IESO = ON        // Internal/External Switchover (Internal/External Switchover mode is enabled)
+#pragma config FCMEN = ON       // Fail-Safe Clock Monitor Enable (Fail-Safe Clock Monitor is enabled)
+
+// CONFIG2
+#pragma config WRT = OFF        // Flash Memory Self-Write Protection (Write protection off)
+#pragma config VCAPEN = OFF     // Voltage Regulator Capacitor Enable bit (VCAP pin function disabled)
+#pragma config STVREN = ON      // Stack Overflow/Underflow Reset Enable (Stack Overflow or Underflow will cause a Reset)
+#pragma config BORV = LO        // Brown-out Reset Voltage Selection (Brown-out Reset Voltage (Vbor), low trip point selected.)
+#pragma config LPBOR = OFF      // Low-Power Brown Out Reset (Low-Power BOR is disabled)
+#pragma config LVP = ON         // Low-Voltage Programming Enable (Low-voltage programming enabled)
+
+// #pragma config statements should precede project file includes.
+// Use project enums instead of #define for ON and OFF.
+
+#include <xc.h>
+#include<pic16f1516.h>
+#include<stdint.h>
+#define _XTAL_FREQ 2000000          //2MHZ 
+uint8_t portBflag=0;                //flag initialize for IOCIE 
+
+void main()                         //PWM generation for servo motor 0'deg(1ms),90'deg(1.5ms),180'deg(2ms)[50hz,20ms T.period]
+                                    //PORTB interrupt for changing 0,90,180 of servo motor
+{                                   //T.period = 20ms. 
+    TRISC = LATC =0;                //CCP1 pin as PWM output.(T.period=20000us)20ms 
+    LATB=0;
+    TRISB =1;                       //PORT B as input(button)PORTB ON CHANGE interrupt
+    ANSELB=0;                       //digital input
+    // OSCCON = 0b01100010;         //2MHZ internal oscillator frequency.
+    OSCCONbits.SCS=0b10;            // internal oscillator.
+    OSCCONbits.IRCF=0b1100;         //2MHZ internal oscillator frequency.
+   
+    // PR2 used for time period.so we use Tmr2 clock source(T2CKPS) & TMR2ON
+    T2CONbits.T2CKPS = 0b11;        //prescalar is 1:64,we can't use postscalar for PWM because no TMR2IF is used.
+    T2CONbits.TMR2ON =1;            //tmr2 is ON.TMR2 is always FOSC/4
+    PR2 = 156;                      //time period(20000us)is loaded in PR2.(1/2MHZ)is 0.5us,instruction cycle is FOSC/4,so 0.5*4= 2us.
+                                    //for 20000us T.period,(20000us/(2us*64prescalar)),PR2 is loaded with 156.25(0 to 156) 
+                                    //(156counts *(2us*64 prescalar)gives T.period of 20000us(20ms)
+    
+    //we used CCP1 pin as PWM output, so (CCP1M,CCPR1L,DC1B) are used.If we use CCP2 pin as PWM output,we use (CCP2M,CCPR2L,DC2B)
+    CCP1CONbits.CCP1M = 0b1100;          //PWM mode.
+    CCPR1L =8;                           //Ton time should be loaded in CCPR1L,for 0 degree, Ton is 1ms,which is 5% of 20000ms
+                                         //8 is initially loaded in CCPR1L(5/100)*156,156 here is PR2 value
+    CCP1CONbits.DC1B = 0b00;             //last 2 LSB bits 00 is loaded in DC1B as default value
+    
+    ei();                         //global interrupt enable
+    INTCONbits.IOCIE=1;           //IOCIE bit (PORTB ON CHANGE interrupt) Enabled
+    INTCONbits.IOCIF=0;          //IOCIF bit (PORTB ON CHANGE interrupt flag) is enabled and made 0 initially.
+    IOCBF=0;                     //IOCBF register(to check in which  PORTB pin out of 7 pins ,the interrut has occured)
+    IOCBNbits.IOCBN1=1;         //we cannot enable the entire IOCBN register to detect falling edge.so individual pins are enabled seperately.
+    IOCBNbits.IOCBN2=1;          //RB1 pin is enabled for increment angle by steps & RB2 pin is enabled for 90 degree of servo
+    IOCBNbits.IOCBN3=1;          //RB3 pin is enabled on falling edge for 180 degree of servo motor
+    IOCBNbits.IOCBN4=1;          //RB4 pin is enabled on falling edge for 0 degree of servo motor.
+     while(1)
+    {
+     if(portBflag==1)               //check if portBflag==1
+       {
+        if(IOCBF1 == 1)             //if IOCBF1(RB1) flag is set.[RB0 is hardware interrupt pin(INTE) so RB0 cannot be used as PORTB interrupt.
+           {
+           IOCBF1=0;                //made IOCBF1 flag 0 again
+           CCPR1L +=1;              //increment the Ton by steps(0'deg to 180'deg)so that angle of servo motor varies.
+           }
+        else if(IOCBF2 == 1)        //if IOCBF2(RB2) flag is set.
+           {
+           IOCBF2=0;                //made IOCBF2 flag 0 again
+           CCPR1L =12;              //load the PWM to servo motor for 90 degree(1.5ms),7.5% of 20000ms.so (7.5/100)*156 =12
+           }
+        else if(IOCBF3 == 1)        //if IOCBF3(RB3) flag is set.
+           {
+           IOCBF3=0;                //made IOCBF3 flag 0 again
+           CCPR1L =16;              //load the PWM to servo motor for 180 degree(2 ms),10% of 20000ms.so (10/100)*156 =16
+           }
+         else if(IOCBF4 == 1)      //if IOCBF4(RB4) flag is set.
+           {
+           IOCBF4=0;               //made IOCBF4 flag 0 again
+           CCPR1L =8;              //load the PWM to servo motor for 0 degree(1 ms),5% of 20000ms.so (5/100)*156 =8
+           }
+        portBflag=0;               //made portBflag '0' again.
+       }
+    }
+}
+void __interrupt() ISR(void)             //subroutine for PORTB ON CHANGE interrupt           
+{
+if(INTCONbits.IOCIF)                     //if interrupt occurs in any of the PORTB pins,IOCIF flag will set as 1.
+ {
+   INTCONbits.IOCIF=0;                   //IOCIF flag is made 0 again 
+   portBflag=1;                          //portBflag will be set as '1' once IOCIF has occured and cleared.
+ }
+}

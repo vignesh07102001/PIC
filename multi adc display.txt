@@ -1,0 +1,105 @@
+
+// PIC16F1934 Configuration Bit Settings
+
+// 'C' source line config statements
+
+// CONFIG1
+#pragma config FOSC = INTOSC    // Oscillator Selection (INTOSC oscillator: I/O function on CLKIN pin)
+#pragma config WDTE = OFF       // Watchdog Timer Enable (WDT disabled)
+#pragma config PWRTE = OFF      // Power-up Timer Enable (PWRT disabled)
+#pragma config MCLRE = ON       // MCLR Pin Function Select (MCLR/VPP pin function is MCLR)
+#pragma config CP = OFF         // Flash Program Memory Code Protection (Program memory code protection is disabled)
+#pragma config CPD = OFF        // Data Memory Code Protection (Data memory code protection is disabled)
+#pragma config BOREN = ON       // Brown-out Reset Enable (Brown-out Reset enabled)
+#pragma config CLKOUTEN = OFF   // Clock Out Enable (CLKOUT function is disabled. I/O or oscillator function on the CLKOUT pin)
+#pragma config IESO = ON        // Internal/External Switchover (Internal/External Switchover mode is enabled)
+#pragma config FCMEN = ON       // Fail-Safe Clock Monitor Enable (Fail-Safe Clock Monitor is enabled)
+
+// CONFIG2
+#pragma config WRT = OFF        // Flash Memory Self-Write Protection (Write protection off)
+#pragma config VCAPEN = OFF     // Voltage Regulator Capacitor Enable (All VCAP pin functionality is disabled)
+#pragma config PLLEN = ON       // PLL Enable (4x PLL enabled)
+#pragma config STVREN = ON      // Stack Overflow/Underflow Reset Enable (Stack Overflow or Underflow will cause a Reset)
+#pragma config BORV = LO        // Brown-out Reset Voltage Selection (Brown-out Reset Voltage (Vbor), low trip point selected.)
+#pragma config LVP = ON         // Low-Voltage Programming Enable (Low-voltage programming enabled)
+
+// #pragma config statements should precede project file includes.
+// Use project enums instead of #define for ON and OFF.
+
+#include <xc.h>
+#include<stdint.h>
+#define _XTAL_FREQ 500000
+uint16_t val1=0,val2=0,val=0,voltage=0 ;             //16 bit global variables
+char A[]= "AN0=",B[]="AN1=",C[]="AN2=",D[]="AN3=";   // all strings
+void display(char p,char q);                                        
+void display_str(char E[]) ; 
+uint8_t ADC(uint8_t z);                              //ADC function
+uint8_t LCD(uint8_t s,uint8_t t);                    //LCD function
+uint8_t dispadc(uint8_t a,uint8_t b,uint8_t c); //sending ADC channel,LCD position,string 
+void main()
+{
+    while(1)
+    {
+    dispadc(0X00,0X80,A);             //AN0,POSITION,STRING A
+    dispadc(0X04,0X89,B);             //AN1,POSITION,STRING B
+    dispadc(0X08,0XC0,C);            //AN2,POSITION,STRING C
+    dispadc(0X0C,0XC9,D);              //AN3,POSITION,STRING D
+    }
+}
+uint8_t dispadc(uint8_t a,uint8_t b,uint8_t c)    //ADC channel,LCD position,string value.
+{
+    LATC =LATD= 0;               //LATC & LATD initially zero.
+    TRISA = 0xFF;                  //PORTA as input port
+    ANSELA =0XFF;                    //INPUT AS analog input
+    TRISC=TRISD=0;               //PORTC & PORTD as output port 
+    display(0x0E,0);                //display ON ,cursor ON
+    display(0x3C,0);                //ACTIVATING second row of LCD display.
+    display(b,0);               //SETTING CURSOR ON PARTICULAR LCD POSITION
+    display_str(c);                //display respective string
+    voltage=ADC(a);                //function calling ADC of that particular channel & returning voltage value.
+    LCD(voltage,b);                   //sending voltage AND LCD position to LCD function 
+}
+uint8_t ADC(uint8_t z)
+{
+    OSCCON = 0b01010010;           //500 Khz clk frequency
+    ADCON0 = z;                    //ADC channel selection
+    ADCON1 = 0b10000000;          //FOSC/2,RIGHT JUSTIFY.
+    ADCON0bits.ADON = 1;            //ADC IS ON   
+    __delay_us(10);              //acquisition time.
+    ADCON0bits.GO=1;             // conversion of sampled voltage into binary format is started.
+    while(GO_nDONE==1);           // it checks whether the conversion is over,as long as conversion is over repeat the same while loop.
+    val1=ADRESH;                 //8 BIT MSB value
+    val2=ADRESL;                 //8 BIT  LSB VALUE
+    val=(val2|(val1<<8));        //8 BIT MSB(val 1) VALUE IS LEFT SHIFTED
+    val = (val*50)/1023;         //scale down to 5.0v(50)
+    return val;                  //returning the voltage value.
+}
+uint8_t LCD(uint8_t s,uint8_t t)    //getting voltage and LCD position
+{
+     uint8_t m,n;                 //local variables
+     m=s/10;                     //10's digit
+     n=s%10;                     //1's digit
+    display(t+0X04,0);             //setting cursor at 5th position from the base position(t)
+    display(m+48,1);              //displaying 10's digit
+    display(t+0x05,0);              //setting cursor at 6 th position
+    display(46,1);                //ASCII value for dot(.)
+    display(t+0x06,0);               //setting cursor at 7th position.
+    display(n+48,1);              //displaying 1's digit 
+}
+void display(char p,char q)           //getting DATA in 'a' & MODE in 'b'.        
+{
+    LATD0=q;                          //command mode(RS->O COMMAND MODE ,RS->1 DATA MODE )
+    LATC=p;                           //data is loaded.
+    LATD1=1;                          //enable
+    __delay_us(20);
+    LATD1=0;                           //disable
+    __delay_us(20);   
+}
+void display_str(char E[])                  //getting the array and declared in char datatype.
+{
+    for(uint8_t i=0 ; E[i]!= '\0'; i++)    //initialize 'i' and  check A[i] != null.
+     {
+         display(E[i],1);                  //function passing the data and mode.
+         __delay_ms(50);                   //delay between each character.
+     }
+}
